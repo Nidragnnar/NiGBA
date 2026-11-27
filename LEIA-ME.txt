@@ -25,6 +25,12 @@ CONTROLES (todos podem ser trocados em Ajuda > Controles)
   Controles de Xbox, PlayStation e genéricos funcionam: é só conectar.
   O gatilho direito acelera e o esquerdo volta no tempo.
 
+JOGOS COM SENSORES NO CARTUCHO
+  Yoshi Topsy-Turvy, Koro Koro Puzzle (inclinar) e WarioWare: Twisted! (girar):
+  use o analógico direito do controle, ou as teclas I J K L.
+  Drill Dozer e WarioWare: Twisted! fazem o controle vibrar.
+  Boktai 1, 2 e 3 (luz do sol): ajuste em Emulação > Luz do sol (0 a 10).
+
 CHEATS (menu Emulação > Cheats)
   Cole o código, dê um nome e clique em Adicionar. Funcionam os formatos
   CodeBreaker (ex.: 82024284 0063), GameShark v1/v2 e Raw (02024284:63).
@@ -32,10 +38,15 @@ CHEATS (menu Emulação > Cheats)
   Action Replay / GameShark v3 ainda não é aceito.
 
 IMAGEM (menu Vídeo)
+  Tema: Nidra (roxo e dourado) ou Pastel (rosa e lavanda).
   Cores do GBA original: deixa as cores como na tela do aparelho, mais
   suaves (os jogos foram pintados para ela).
   Suavizar imagem: tira o aspecto de pixels quadrados.
   Efeito de tela LCD: grade fina entre os pixels (janela 3x ou maior).
+
+SOM (menu Áudio)
+  Suavizar canais do Game Boy: tira o chiado agudo de alguns sons
+  (vem ligado; desligado, soa exatamente como o aparelho).
 
 TRADUÇÕES E PATCHES
   Para jogar uma tradução (ou outro hack distribuído como patch .ips, .ups
