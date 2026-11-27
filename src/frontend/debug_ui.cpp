@@ -10,11 +10,9 @@
 #include <vector>
 
 #include "frontend/app.hpp"
+#include "frontend/theme.hpp"
 
 namespace {
-
-const ImVec4 kAccent{0.86f, 0.42f, 0.64f, 1.0f};
-const ImVec4 kDim{0.62f, 0.50f, 0.64f, 1.0f};
 
 uint32_t argb(uint16_t c) {
     const uint32_t r = c & 0x1F, g = (c >> 5) & 0x1F, b = (c >> 10) & 0x1F;
@@ -132,19 +130,19 @@ void App::drawCpuWindow() {
     for (int i = 0; i < 4; ++i) {
         if (i) ImGui::SameLine();
         const bool on = cpsr & (1u << (31 - i));
-        ImGui::TextColored(on ? kAccent : kDim, "%c", flagNames[i]);
+        ImGui::TextColored(on ? theme().accent : theme().dim, "%c", flagNames[i]);
     }
     ImGui::SameLine();
-    ImGui::TextColored((cpsr & 0x80) ? kAccent : kDim, "  I");
+    ImGui::TextColored((cpsr & 0x80) ? theme().accent : theme().dim, "  I");
     ImGui::SameLine();
-    ImGui::TextColored((cpsr & 0x20) ? kAccent : kDim, "T");
+    ImGui::TextColored((cpsr & 0x20) ? theme().accent : theme().dim, "T");
     ImGui::SameLine();
     ImGui::TextDisabled("  CPSR %08X", cpsr);
 
     if (ImGui::BeginTable("##regs", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchSame)) {
         for (int i = 0; i < 16; ++i) {
             ImGui::TableNextColumn();
-            ImGui::TextColored(kDim, "%s", i == 13 ? "sp " : i == 14 ? "lr " : i == 15 ? "pc " : ("r" + std::to_string(i) + (i < 10 ? " " : "")).c_str());
+            ImGui::TextColored(theme().dim, "%s", i == 13 ? "sp " : i == 14 ? "lr " : i == 15 ? "pc " : ("r" + std::to_string(i) + (i < 10 ? " " : "")).c_str());
             ImGui::SameLine();
             ImGui::Text("%08X", cpu.reg(i));
         }
@@ -219,7 +217,7 @@ void App::drawMemoryWindow() {
                     ascii[k] = (v >= 0x20 && v < 0x7F) ? static_cast<char>(v) : '.';
                 }
                 const bool selected = memAddress_ >= addr && memAddress_ < addr + 16;
-                if (selected) ImGui::TextColored(kAccent, "%s %s", line, ascii);
+                if (selected) ImGui::TextColored(theme().accent, "%s %s", line, ascii);
                 else ImGui::Text("%s %s", line, ascii);
             }
         }
@@ -310,7 +308,7 @@ void App::drawPaletteWindow() {
     for (int half = 0; half < 2; ++half) {
         if (half) ImGui::SameLine();
         ImGui::BeginGroup();
-        ImGui::TextColored(kAccent, "%s", half ? "Sprites (05000200)" : "Backgrounds (05000000)");
+        ImGui::TextColored(theme().accent, "%s", half ? "Sprites (05000200)" : "Backgrounds (05000000)");
         for (int i = 0; i < 256; ++i) {
             const uint32_t addr = 0x05000000 + static_cast<uint32_t>(half * 0x200 + i * 2);
             const uint16_t c = static_cast<uint16_t>((bus.peek8(addr) | (bus.peek8(addr + 1) << 8)) & 0x7FFF);
@@ -393,7 +391,7 @@ void App::drawSpritesWindow() {
             int x = a1 & 0x1FF;
             if (x >= 256) x -= 512;
             ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::TextColored(hidden ? kDim : kAccent, "%d", i);
+            ImGui::TableNextColumn(); ImGui::TextColored(hidden ? theme().dim : theme().accent, "%d", i);
             ImGui::TableNextColumn();
             if (atlas) {
                 const float scale = 32.0f / static_cast<float>(std::max(w, h));
@@ -438,7 +436,7 @@ void App::drawIoWindow() {
                     ImGui::TableNextColumn(); ImGui::TextDisabled("%08X", 0x04000000 + reg.offset);
                     ImGui::TableNextColumn(); ImGui::Text("%s", reg.name);
                     // Valor guardado internamente (inclusive de registradores só-escrita, que a CPU não consegue ler).
-                    ImGui::TableNextColumn(); ImGui::TextColored(kAccent, "%04X", bus.ioRead16(reg.offset));
+                    ImGui::TableNextColumn(); ImGui::TextColored(theme().accent, "%04X", bus.ioRead16(reg.offset));
                     ImGui::TableNextColumn(); ImGui::TextDisabled("%s", reg.description);
                 }
                 ImGui::EndTable();

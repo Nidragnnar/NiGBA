@@ -18,6 +18,7 @@
 #include "core/png.hpp"
 #include "frontend/diagnostics.hpp"
 #include "frontend/file_dialog.hpp"
+#include "frontend/theme.hpp"
 
 namespace {
 constexpr uint32_t kAudioTargetBytes = gba::Apu::kSampleRate * 2 * 2 / 20; // 50 ms de som na fila
@@ -69,6 +70,7 @@ bool App::init() {
         std::fprintf(stderr, "Falha ao criar a janela: %s\n", SDL_GetError());
         return false;
     }
+    createDragonTexture();
 
     // Áudio a 32.768 Hz, estéreo, 16 bits (o SDL converte para a taxa da placa de som).
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
@@ -108,6 +110,7 @@ void App::shutdown() {
     if (vramTexture_) SDL_DestroyTexture(vramTexture_);
     if (spriteTexture_) SDL_DestroyTexture(spriteTexture_);
     if (gridTexture_) SDL_DestroyTexture(gridTexture_);
+    if (dragonTexture_) SDL_DestroyTexture(dragonTexture_);
     if (texture_) SDL_DestroyTexture(texture_);
     if (renderer_) SDL_DestroyRenderer(renderer_);
     SDL_DestroyWindow(window_);
@@ -364,7 +367,9 @@ void App::render() {
                    ((!ImGui::GetIO().WantCaptureKeyboard && SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB] != 0) ||
                     padFastForward());
 
-    SDL_SetRenderDrawColor(renderer_, 0xF3, 0xE6, 0xF7, 0xFF); // lavanda clarinho nas bordas
+    const ImU32 border = theme().screenBorder; // cor do tema nas bordas
+    SDL_SetRenderDrawColor(renderer_, (border >> IM_COL32_R_SHIFT) & 0xFF, (border >> IM_COL32_G_SHIFT) & 0xFF,
+                           (border >> IM_COL32_B_SHIFT) & 0xFF, 0xFF);
     SDL_RenderClear(renderer_);
 
     if (console_) {

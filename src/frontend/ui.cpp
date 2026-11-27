@@ -1,27 +1,21 @@
-// Interface do NiGBA com o Dear ImGui: tema pastel, barra de menus, tela de boas-vindas e avisos.
+// Interface do NiGBA com o Dear ImGui: temas (theme.hpp), barra de menus, tela de boas-vindas e avisos.
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
+#include <vector>
 
 #include "core/cartridge.hpp"
 #include "frontend/app.hpp"
+#include "frontend/assets/dragao_mascara.hpp"
 #include "frontend/diagnostics.hpp"
 #include "frontend/file_dialog.hpp"
+#include "frontend/theme.hpp"
 
 namespace {
-// Paleta "fofa": rosa e lavanda em tons pastel, texto ameixa.
-const ImVec4 kPink{0.97f, 0.80f, 0.88f, 1.0f};
-const ImVec4 kPinkStrong{0.93f, 0.58f, 0.76f, 1.0f};
-const ImVec4 kPinkDeep{0.86f, 0.42f, 0.64f, 1.0f};
-const ImVec4 kLavender{0.85f, 0.79f, 0.96f, 1.0f};
-const ImVec4 kLavenderStrong{0.74f, 0.64f, 0.93f, 1.0f};
-const ImVec4 kCream{1.00f, 0.96f, 0.98f, 1.0f};
-const ImVec4 kPlum{0.38f, 0.24f, 0.40f, 1.0f};
-const ImVec4 kPlumSoft{0.62f, 0.50f, 0.64f, 1.0f};
-
 const char* const kKeyNames[10] = {"A", "B", "SELECT", "START", "Direita", "Esquerda", "Cima", "Baixo", "R", "L"};
 
 // Nomes dos botões do controle (ordem do SDL_GameControllerButton), com os rótulos do Xbox.
@@ -41,8 +35,11 @@ const char* padButtonName(int button) {
 } // namespace
 
 void App::applyTheme() {
+    selectTheme(static_cast<ThemeId>(config_.theme));
+    const Theme& t = theme();
     ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::StyleColorsLight(&style);
+    if (t.dark) ImGui::StyleColorsDark(&style);
+    else ImGui::StyleColorsLight(&style);
 
     style.WindowRounding = 14.0f;
     style.ChildRounding = 12.0f;
@@ -61,34 +58,47 @@ void App::applyTheme() {
     style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 
     ImVec4* c = style.Colors;
-    c[ImGuiCol_Text] = kPlum;
-    c[ImGuiCol_TextDisabled] = kPlumSoft;
-    c[ImGuiCol_WindowBg] = kCream;
-    c[ImGuiCol_ChildBg] = ImVec4(1, 1, 1, 0.5f);
-    c[ImGuiCol_PopupBg] = kCream;
-    c[ImGuiCol_Border] = ImVec4(0.90f, 0.72f, 0.84f, 1.0f);
-    c[ImGuiCol_FrameBg] = ImVec4(1.0f, 0.90f, 0.95f, 1.0f);
-    c[ImGuiCol_FrameBgHovered] = kPink;
-    c[ImGuiCol_FrameBgActive] = kPinkStrong;
-    c[ImGuiCol_TitleBg] = kLavender;
-    c[ImGuiCol_TitleBgActive] = kLavenderStrong;
-    c[ImGuiCol_TitleBgCollapsed] = kLavender;
-    c[ImGuiCol_MenuBarBg] = kPink;
-    c[ImGuiCol_Button] = kPink;
-    c[ImGuiCol_ButtonHovered] = kPinkStrong;
-    c[ImGuiCol_ButtonActive] = kPinkDeep;
-    c[ImGuiCol_Header] = kPink;
-    c[ImGuiCol_HeaderHovered] = kPinkStrong;
-    c[ImGuiCol_HeaderActive] = kPinkDeep;
-    c[ImGuiCol_CheckMark] = kPinkDeep;
-    c[ImGuiCol_SliderGrab] = kPinkStrong;
-    c[ImGuiCol_SliderGrabActive] = kPinkDeep;
-    c[ImGuiCol_Separator] = ImVec4(0.92f, 0.78f, 0.88f, 1.0f);
-    c[ImGuiCol_ScrollbarBg] = ImVec4(1, 1, 1, 0);
-    c[ImGuiCol_ScrollbarGrab] = kPink;
-    c[ImGuiCol_ScrollbarGrabHovered] = kPinkStrong;
-    c[ImGuiCol_ScrollbarGrabActive] = kPinkDeep;
-    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.55f, 0.35f, 0.55f, 0.35f);
+    c[ImGuiCol_Text] = t.text;
+    c[ImGuiCol_TextDisabled] = t.textSoft;
+    c[ImGuiCol_WindowBg] = t.windowBg;
+    c[ImGuiCol_ChildBg] = t.childBg;
+    c[ImGuiCol_PopupBg] = t.windowBg;
+    c[ImGuiCol_Border] = t.border;
+    c[ImGuiCol_FrameBg] = t.frameBg;
+    c[ImGuiCol_FrameBgHovered] = t.light;
+    c[ImGuiCol_FrameBgActive] = t.strong;
+    c[ImGuiCol_TitleBg] = t.title;
+    c[ImGuiCol_TitleBgActive] = t.titleActive;
+    c[ImGuiCol_TitleBgCollapsed] = t.title;
+    c[ImGuiCol_MenuBarBg] = t.menuBar;
+    c[ImGuiCol_Button] = t.light;
+    c[ImGuiCol_ButtonHovered] = t.strong;
+    c[ImGuiCol_ButtonActive] = t.deep;
+    c[ImGuiCol_Header] = t.light;
+    c[ImGuiCol_HeaderHovered] = t.strong;
+    c[ImGuiCol_HeaderActive] = t.deep;
+    c[ImGuiCol_CheckMark] = t.check;
+    c[ImGuiCol_SliderGrab] = t.grab;
+    c[ImGuiCol_SliderGrabActive] = t.grabActive;
+    c[ImGuiCol_Separator] = t.separator;
+    c[ImGuiCol_SeparatorHovered] = t.strong;
+    c[ImGuiCol_SeparatorActive] = t.deep;
+    c[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_ScrollbarGrab] = t.light;
+    c[ImGuiCol_ScrollbarGrabHovered] = t.strong;
+    c[ImGuiCol_ScrollbarGrabActive] = t.deep;
+    c[ImGuiCol_ResizeGrip] = t.light;
+    c[ImGuiCol_ResizeGripHovered] = t.strong;
+    c[ImGuiCol_ResizeGripActive] = t.deep;
+    c[ImGuiCol_Tab] = t.light;
+    c[ImGuiCol_TabHovered] = t.strong;
+    c[ImGuiCol_TabSelected] = t.deep;
+    c[ImGuiCol_TableHeaderBg] = t.frameBg;
+    c[ImGuiCol_TableBorderStrong] = t.border;
+    c[ImGuiCol_TableBorderLight] = t.separator;
+    c[ImGuiCol_TextSelectedBg] = ImVec4(t.strong.x, t.strong.y, t.strong.z, 0.35f);
+    c[ImGuiCol_NavCursor] = t.accent;
+    c[ImGuiCol_ModalWindowDimBg] = t.modalDim;
 }
 
 void App::loadFonts() {
@@ -114,6 +124,28 @@ void App::drawHeart(ImDrawList* dl, float cx, float cy, float size, uint32_t col
     dl->AddCircleFilled(ImVec2(cx + r * 0.5f, cy), r * 0.55f, color, 20);
     dl->AddTriangleFilled(ImVec2(cx - r * 1.02f, cy + r * 0.12f), ImVec2(cx + r * 1.02f, cy + r * 0.12f),
                           ImVec2(cx, cy + r * 1.15f), color);
+}
+
+// Textura branca com a silhueta do dragão (assets/dragao_mascara.hpp); a cor vem do tema na hora de desenhar.
+void App::createDragonTexture() {
+    std::vector<uint32_t> pixels(static_cast<size_t>(kDragaoLado) * kDragaoLado);
+    for (size_t i = 0; i < pixels.size(); ++i) pixels[i] = (static_cast<uint32_t>(kDragaoMascara[i]) << 24) | 0xFFFFFFu;
+    dragonTexture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, kDragaoLado, kDragaoLado);
+    if (!dragonTexture_) return; // sem a textura, o tema Nidra usa corações
+    SDL_UpdateTexture(dragonTexture_, nullptr, pixels.data(), kDragaoLado * static_cast<int>(sizeof(uint32_t)));
+    SDL_SetTextureBlendMode(dragonTexture_, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(dragonTexture_, SDL_ScaleModeLinear);
+}
+
+void App::drawEmblem(ImDrawList* dl, float cx, float cy, float size, uint32_t color) const {
+    if (!theme().dragons || !dragonTexture_) {
+        drawHeart(dl, cx, cy, size, color);
+        return;
+    }
+    const float half = size * 0.625f; // um pouco maior que o coração: o dragão tem mais detalhe
+    cy += size * 0.15f;               // o coração fica abaixo do ponto (cy); o dragão ocupa o mesmo lugar
+    dl->AddImage(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(dragonTexture_)), ImVec2(cx - half, cy - half),
+                 ImVec2(cx + half, cy + half), ImVec2(0, 0), ImVec2(1, 1), color);
 }
 
 void App::drawUi() {
@@ -156,7 +188,7 @@ void App::drawCheatsWindow() {
     }
     if (cheatHook_) {
         if (hookHits_ == 0) {
-            ImGui::TextColored(ImVec4(0.85f, 0.45f, 0.20f, 1.0f), "Código mestre: o gancho %08X ainda não rodou.", cheatHook_);
+            ImGui::TextColored(theme().warning, "Código mestre: o gancho %08X ainda não rodou.", cheatHook_);
             ImGui::TextDisabled("Ele só roda em certos momentos do jogo (num encontro, por exemplo).");
             ImGui::TextDisabled("Se nunca rodar, o código mestre pode ser de outra versão da ROM.");
         } else {
@@ -166,7 +198,7 @@ void App::drawCheatsWindow() {
     }
 
     ImGui::Separator();
-    ImGui::TextColored(kPinkDeep, "Novo cheat");
+    ImGui::TextColored(theme().accent, "Novo cheat");
     ImGui::InputText("Nome", cheatName_.data(), cheatName_.size());
     ImGui::TextDisabled("Código (uma linha por instrução):");
     ImGui::InputTextMultiline("##codigo", cheatCode_.data(), cheatCode_.size(), ImVec2(-1, 110));
@@ -190,7 +222,7 @@ void App::drawCheatsWindow() {
             cheatError_ = std::string("Código inválido: ") + e.what();
         }
     }
-    if (!cheatError_.empty()) ImGui::TextColored(ImVec4(0.85f, 0.25f, 0.35f, 1.0f), "%s", cheatError_.c_str());
+    if (!cheatError_.empty()) ImGui::TextColored(theme().error, "%s", cheatError_.c_str());
     ImGui::Spacing();
     ImGui::TextDisabled("Aceita Raw (02024284:63), CodeBreaker (82024284 0063)");
     ImGui::TextDisabled("e GameShark v1/v2. Action Replay / GameShark v3 ainda não.");
@@ -226,7 +258,7 @@ void App::drawMenuBar() {
 
     if (ImGui::BeginMenu("Emulação", console_ != nullptr)) {
         if (!patchName_.empty()) {
-            ImGui::TextColored(kPinkDeep, "Patch: %s", patchName_.c_str());
+            ImGui::TextColored(theme().accent, "Patch: %s", patchName_.c_str());
             if (ImGui::MenuItem("Reabrir sem o patch")) openRom(romPath_, "", false);
             ImGui::Separator();
         }
@@ -266,6 +298,16 @@ void App::drawMenuBar() {
     }
 
     if (ImGui::BeginMenu("Vídeo")) {
+        if (ImGui::BeginMenu("Tema")) {
+            for (const ThemeId id : {ThemeId::Nidra, ThemeId::Pastel}) {
+                if (ImGui::MenuItem(themeName(id), nullptr, config_.theme == static_cast<int>(id))) {
+                    config_.theme = static_cast<int>(id);
+                    applyTheme();
+                    config_.save(configPath_);
+                }
+            }
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("Tamanho da janela")) {
             for (int s = 1; s <= 6; ++s) {
                 const std::string label = std::to_string(s) + "x  (" + std::to_string(240 * s) + " x " + std::to_string(160 * s) + ")";
@@ -334,18 +376,19 @@ void App::drawWelcome() {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImVec2 pos(vp->WorkPos.x, vp->WorkPos.y), size(vp->WorkSize.x, vp->WorkSize.y);
 
-    // Fundo em degradê pastel com corações flutuando.
+    // Fundo em degradê com corações flutuando, nas cores do tema.
+    const Theme& th = theme();
     ImDrawList* bg = ImGui::GetBackgroundDrawList();
-    bg->AddRectFilledMultiColor(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(253, 228, 240, 255),
-                                IM_COL32(236, 226, 252, 255), IM_COL32(226, 236, 252, 255), IM_COL32(252, 236, 244, 255));
+    bg->AddRectFilledMultiColor(pos, ImVec2(pos.x + size.x, pos.y + size.y), th.gradient[0], th.gradient[1],
+                                th.gradient[2], th.gradient[3]);
     const float t = static_cast<float>(ImGui::GetTime());
-    const ImU32 heartColors[3] = {IM_COL32(247, 168, 205, 150), IM_COL32(200, 176, 245, 140), IM_COL32(250, 196, 214, 160)};
+    const ImU32* heartColors = th.hearts;
     for (int i = 0; i < 9; ++i) {
         const float fx = std::fmod(0.11f + i * 0.137f, 1.0f);
         const float rise = std::fmod(t * (0.03f + 0.01f * (i % 3)) + i * 0.21f, 1.0f);
         const float x = pos.x + size.x * fx + std::sin(t * 1.3f + static_cast<float>(i)) * 12.0f;
         const float y = pos.y + size.y * (1.05f - rise * 1.2f);
-        drawHeart(bg, x, y, 16.0f + 6.0f * static_cast<float>(i % 3), heartColors[i % 3]);
+        drawEmblem(bg, x, y, 16.0f + 6.0f * static_cast<float>(i % 3), heartColors[i % 3]);
     }
 
     // Cartão central.
@@ -359,7 +402,7 @@ void App::drawWelcome() {
     const char* title = "NiGBA";
     if (titleFont_) ImGui::PushFont(titleFont_);
     ImGui::SetCursorPosX((cardW - ImGui::CalcTextSize(title).x) * 0.5f);
-    ImGui::TextColored(kPinkDeep, "%s", title);
+    ImGui::TextColored(theme().accent, "%s", title);
     if (titleFont_) ImGui::PopFont();
 
     const char* subtitle = "Seu Emulador de Game Boy Advance";
@@ -368,12 +411,14 @@ void App::drawWelcome() {
     ImGui::Spacing();
 
     const float buttonW = cardW - 2 * ImGui::GetStyle().WindowPadding.x;
-    ImGui::PushStyleColor(ImGuiCol_Button, kPinkStrong);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+    ImGui::PushStyleColor(ImGuiCol_Button, th.primary);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th.primaryHover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, th.primaryActive);
+    ImGui::PushStyleColor(ImGuiCol_Text, th.primaryText);
     if (ImGui::Button("Abrir uma ROM...", ImVec2(buttonW, 40))) {
         if (auto path = openRomDialog(window_)) openRom(*path);
     }
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(4);
     const char* hint = "ou arraste o arquivo .gba para esta janela";
     ImGui::SetCursorPosX((cardW - ImGui::CalcTextSize(hint).x) * 0.5f);
     ImGui::TextDisabled("%s", hint);
@@ -403,9 +448,9 @@ void App::drawOverlays() {
         const ImVec2 ts = ImGui::CalcTextSize(text);
         const ImVec2 c(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f);
         fg->AddRectFilled(ImVec2(c.x - ts.x / 2 - 22, c.y - ts.y / 2 - 12), ImVec2(c.x + ts.x / 2 + 22, c.y + ts.y / 2 + 12),
-                          IM_COL32(255, 244, 250, 235), 999.0f);
-        fg->AddText(ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), ImGui::GetColorU32(kPlum), text);
-        drawHeart(fg, c.x - ts.x / 2 - 8, c.y - 3, 12, IM_COL32(240, 140, 190, 255));
+                          theme().pill, 999.0f);
+        fg->AddText(ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), theme().pillText, text);
+        drawEmblem(fg, c.x - ts.x / 2 - 8, c.y - 3, 12, theme().heart);
     }
 
     // Voltando no tempo: uma pílula no topo com os segundos de histórico que ainda restam.
@@ -415,8 +460,8 @@ void App::drawOverlays() {
         const ImVec2 ts = ImGui::CalcTextSize(text);
         const ImVec2 c(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + 30);
         fg->AddRectFilled(ImVec2(c.x - ts.x / 2 - 18, c.y - ts.y / 2 - 9), ImVec2(c.x + ts.x / 2 + 18, c.y + ts.y / 2 + 9),
-                          IM_COL32(236, 228, 252, 235), 999.0f);
-        fg->AddText(ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), ImGui::GetColorU32(kPlum), text);
+                          theme().pillAlt, 999.0f);
+        fg->AddText(ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), theme().pillText, text);
     }
 
     // Aviso temporário (save state, erros): canto inferior esquerdo, sumindo devagar.
@@ -425,9 +470,14 @@ void App::drawOverlays() {
         const float alpha = static_cast<float>(std::min(1.0, (toastUntil_ - now) / 0.5));
         const ImVec2 ts = ImGui::CalcTextSize(toast_.c_str());
         const ImVec2 p(vp->WorkPos.x + 14, vp->WorkPos.y + vp->WorkSize.y - ts.y - 28);
-        fg->AddRectFilled(p, ImVec2(p.x + ts.x + 44, p.y + ts.y + 16), IM_COL32(255, 238, 247, static_cast<int>(235 * alpha)), 999.0f);
-        drawHeart(fg, p.x + 16, p.y + ts.y / 2 + 5, 11, IM_COL32(240, 140, 190, static_cast<int>(255 * alpha)));
-        fg->AddText(ImVec2(p.x + 30, p.y + 8), IM_COL32(97, 61, 102, static_cast<int>(255 * alpha)), toast_.c_str());
+        // Cor do tema com o alfa do sumiço.
+        const auto fade = [alpha](ImU32 color, float base) {
+            return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(base * alpha) << IM_COL32_A_SHIFT);
+        };
+        const Theme& th = theme();
+        fg->AddRectFilled(p, ImVec2(p.x + ts.x + 44, p.y + ts.y + 16), fade(th.toast, 235), 999.0f);
+        drawEmblem(fg, p.x + 16, p.y + ts.y / 2 + 5, 11, fade(th.heart, 255));
+        fg->AddText(ImVec2(p.x + 30, p.y + 8), fade(th.toastText, 255), toast_.c_str());
     }
 }
 
@@ -437,7 +487,7 @@ void App::drawStoppedPopup() {
     if (!ImGui::BeginPopupModal("O jogo parou", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
     ImGui::TextWrapped("A emulação encontrou algo que ainda não sabe fazer:");
     ImGui::Spacing();
-    ImGui::TextColored(kPinkDeep, "%s", stopReason_.c_str());
+    ImGui::TextColored(theme().accent, "%s", stopReason_.c_str());
     ImGui::Spacing();
     ImGui::TextWrapped("Os detalhes estão no terminal (F1 e F2 mostram mais).");
     ImGui::Spacing();
@@ -460,7 +510,7 @@ void App::drawBindingRow(int index, bool pad) {
                                   SDL_GetScancodeName(static_cast<SDL_Scancode>(config_.keys[i]));
     if (label.empty()) label = "(nenhuma)";
     label += std::string(pad ? "##pad" : "##tecla") + std::to_string(index);
-    if (waiting) ImGui::PushStyleColor(ImGuiCol_Button, kLavenderStrong);
+    if (waiting) ImGui::PushStyleColor(ImGuiCol_Button, theme().waiting);
     if (ImGui::Button(label.c_str(), ImVec2(210, 0))) {
         capture_ = pad ? Capture::Pad : Capture::Key;
         captureIndex_ = index;
@@ -480,7 +530,7 @@ void App::drawControlsWindow() {
             }
             if (ImGui::BeginTabItem("Controle")) {
                 if (pads_.empty()) ImGui::TextDisabled("Nenhum controle conectado (é só conectar).");
-                else ImGui::TextColored(kPinkDeep, "%s", padName().c_str());
+                else ImGui::TextColored(theme().accent, "%s", padName().c_str());
                 ImGui::Spacing();
                 for (int i = 0; i < 10; ++i) drawBindingRow(i, true);
                 ImGui::Spacing();
@@ -506,7 +556,7 @@ void App::drawControlsWindow() {
         }
         if (capture_ != Capture::None) {
             ImGui::Spacing();
-            ImGui::TextColored(kPinkDeep, capture_ == Capture::Key ? "Aperte a tecla desejada (Esc cancela)"
+            ImGui::TextColored(theme().accent, capture_ == Capture::Key ? "Aperte a tecla desejada (Esc cancela)"
                                                                    : "Aperte o botão no controle (Esc cancela)");
         }
     }
@@ -517,7 +567,7 @@ void App::drawControlsWindow() {
 void App::drawAboutWindow() {
     ImGui::SetNextWindowSize(ImVec2(400, 0), ImGuiCond_Appearing);
     if (ImGui::Begin("Sobre o NiGBA", &showAbout_, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextColored(kPinkDeep, "NiGBA");
+        ImGui::TextColored(theme().accent, "NiGBA");
         ImGui::TextWrapped("Um emulador de Game Boy Advance escrito do zero em C++20, a partir da documentação "
                            "do hardware (GBATEK).");
         ImGui::Spacing();

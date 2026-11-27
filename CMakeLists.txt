@@ -136,6 +136,7 @@ if(SDL2_FOUND)
     src/frontend/config.cpp
     src/frontend/diagnostics.cpp
     src/frontend/debug_ui.cpp
+    src/frontend/theme.cpp
     src/frontend/file_dialog.cpp)
   target_link_libraries(NiGBA PRIVATE gba_core imgui_sdl ${NIGBA_SDL} $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>)
   if(WIN32)

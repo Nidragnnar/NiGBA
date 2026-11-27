@@ -48,6 +48,7 @@ Config Config::load(const std::string& file) {
             else if (key == "cores_gba") c.gbaColors = value == "1";
             else if (key == "suavizar") c.smoothing = value == "1";
             else if (key == "grade_lcd") c.lcdGrid = value == "1";
+            else if (key == "tema") c.theme = std::clamp(std::stoi(value), 0, 1);
             else if (key == "suavizar_psg") c.smoothPsg = value == "1";
             else if (key == "sol") c.sunLevel = std::clamp(std::stoi(value), 0, 10);
             else if (key == "slot") c.stateSlot = std::clamp(std::stoi(value), 1, 4);
@@ -69,7 +70,7 @@ void Config::save(const std::string& file) const {
     out << "# Preferências do NiGBA\n";
     out << "escala=" << scale << "\nmudo=" << (mute ? 1 : 0) << "\nvolume=" << volume << "\nslot=" << stateSlot << "\n";
     out << "cores_gba=" << (gbaColors ? 1 : 0) << "\nsuavizar=" << (smoothing ? 1 : 0) << "\ngrade_lcd=" << (lcdGrid ? 1 : 0) << "\n";
-    out << "suavizar_psg=" << (smoothPsg ? 1 : 0) << "\nsol=" << sunLevel << "\n";
+    out << "tema=" << theme << "\nsuavizar_psg=" << (smoothPsg ? 1 : 0) << "\nsol=" << sunLevel << "\n";
     out << "teclas=";
     for (size_t i = 0; i < keys.size(); ++i) out << (i ? "," : "") << keys[i];
     out << "\ncontrole=";

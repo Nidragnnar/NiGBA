@@ -98,6 +98,9 @@ private:
     void stepFrame();
     SDL_Texture* debugTexture(SDL_Texture*& texture, int w, int h);
     void drawHeart(ImDrawList* dl, float cx, float cy, float size, uint32_t color) const;
+    // Enfeite do tema: dragão (Nidra) ou coração (Pastel), centrado em (cx, cy).
+    void drawEmblem(ImDrawList* dl, float cx, float cy, float size, uint32_t color) const;
+    void createDragonTexture();
 
     Options options_;
     Config config_;
@@ -159,6 +162,7 @@ private:
 
     // Filtros de imagem
     std::array<uint32_t, 240 * 160> displayBuffer_{}; // imagem com as cores do GBA aplicadas
+    SDL_Texture* dragonTexture_ = nullptr;             // silhueta branca do dragão, pintada com a cor do tema
     SDL_Texture* gridTexture_ = nullptr;               // grade do efeito LCD
     int gridW_ = 0, gridH_ = 0;
     gba::RewindBuffer rewind_{120};
