@@ -28,7 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: SDL2
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+        # O repositório da Microsoft que vem na máquina do GitHub às vezes recusa o acesso (403) e derruba o
+        # apt-get update; o NiGBA não usa nada dele. O SDL2 vem dos servidores do Ubuntu.
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/microsoft-prod.sources
+          sudo apt-get update || echo "::warning::apt-get update com falhas; seguindo com as listas que vieram"
+          sudo apt-get install -y libsdl2-dev
       - name: ROMs de teste (jsmolka/gba-tests e suíte do mGBA)
         run: |
           mkdir -p tests/roms
