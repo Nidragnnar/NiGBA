@@ -9,6 +9,10 @@
 //
 // Protocolo: CS sobe, chega um byte de comando (bit menos significativo primeiro: bits 0-3 = 0110,
 // bits 4-6 = comando, bit 7 = leitura), depois os bytes de dados, um bit por pulso de SCK.
+//
+// Sensor solar do Boktai (GBATEK, "GBA Cart Solar Sensor"), na mesma porta, com CS baixo:
+//   bit 0 = relógio, bit 1 = reinício (zera o contador), bit 3 = saída do sensor.
+// Depois do reinício, o jogo dá pulsos até o bit 3 subir: quanto mais luz, menos pulsos.
 
 #include <array>
 #include <cstdint>
@@ -34,8 +38,17 @@ public:
 
     void serialize(StateArchive& ar);
 
+    // Sensor solar: só existe nos cartuchos do Boktai (ver game_db).
+    static constexpr int kMaxSunLevel = 10;
+    void setSolarSensor(bool present) { solar_ = present; }
+    bool hasSolarSensor() const { return solar_; }
+    void setSunLevel(int level) { sunLevel_ = level < 0 ? 0 : (level > kMaxSunLevel ? kMaxSunLevel : level); }
+    int sunLevel() const { return sunLevel_; }
+    void serializeSolar(StateArchive& ar); // versão 7 do formato (no final)
+
 private:
     void updatePins();     // o jogo mudou os pinos: avança o protocolo
+    void updateSolar();    // idem, para o sensor solar
     void processByte();    // terminou de chegar um byte do jogo
     uint8_t outputBit() const;
     void latchTime();      // copia a hora atual para os 7 bytes de data/hora (BCD)
@@ -54,6 +67,12 @@ private:
     bool commandActive_ = false;
     uint8_t control_ = 0x40; // bit 6 = modo 24 horas; bit 7 (falha de energia) desligado
     std::array<uint8_t, 7> time_{}; // ano, mês, dia, dia da semana, hora, minuto, segundo (BCD)
+
+    bool solar_ = false;
+    int sunLevel_ = 0;       // escolhido por quem joga (0 = escuro)
+    int lightCounter_ = 0;   // pulsos desde o último reinício
+    bool lightEdge_ = false; // o relógio estava baixo: o próximo alto conta um pulso
+    int lightSample_ = 0xFF; // pulsos necessários para a saída subir (medido no reinício)
 };
 
 } // namespace gba

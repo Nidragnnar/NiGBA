@@ -27,11 +27,13 @@ Emulador de Game Boy Advance em C++20, escrito do zero usando o GBATEK como espe
 - [x] Patches de tradução e hacks (soft-patching IPS, UPS e BPS): `Jogo.gba` + `Jogo.ups` na mesma pasta e o patch é aplicado na memória, sem alterar a ROM; UPS e BPS conferem o CRC32 e avisam se a ROM for de outra versão
 - [x] Temporização realista: custo de cada acesso por região (WAITCNT, sequencial ou não), buffer de prefetch do cartucho, ciclos internos da CPU, DMA gastando tempo da CPU e timers precisos no meio das instruções e DMA com tempo próprio (sequência de origem e destino, 2 ciclos de partida) (suíte do mGBA: Timing 1784/2020)
 - [x] Relógio do cartucho (RTC Seiko S-3511, porta GPIO) com a hora do computador: Pokémon Ruby/Sapphire/Emerald e derivados, Boktai
+- [x] Sensor solar do Boktai 1/2/3 (mesma porta GPIO): a luz do sol é escolhida em **Emulação → Luz do sol** (0 a 10)
+- [x] Tabela de jogos especiais (pelo código do cartucho, dados do mGBA): tipo de save que a assinatura da ROM não revela e hardware extra; avisa quando o jogo usa inclinação, giroscópio ou vibração, que ainda não são emulados
 - [x] Save: detecção automática, SRAM, Flash 64/128 KB e EEPROM 512 bytes/8 KB, arquivo .sav com gravação segura e automática
 - [x] Sprites: normais e afins (rotação/zoom, tamanho duplo), 12 tamanhos, 16/256 cores, espelhamento, mapeamento 1D/2D, prioridade com backgrounds e entre sprites, limite de ciclos por linha
 - [x] Janelas (WIN0, WIN1, janela de sprites e "fora"), blending (mistura, clarear, escurecer, sprites semitransparentes) e mosaico (BG e sprites)
 - [x] Timers: 4 canais, prescalers 1/64/256/1024, cascata, recarga e IRQ
-- [x] Áudio: 4 canais do Game Boy (quadradas com sweep, onda, ruído; duração e envelope) e filas A/B com DMA de som e timers, 32.768 Hz estéreo
+- [x] Áudio: 4 canais do Game Boy (quadradas com sweep, onda, ruído; duração e envelope) e filas A/B com DMA de som e timers, 32.768 Hz estéreo; opção **Áudio → Suavizar canais do Game Boy** (ligada por padrão) tira o chiado das ondas agudas usando a média de cada amostra (desligada, soa como o aparelho)
 - [x] Ritmo pela placa de som (velocidade correta em qualquer monitor) e aceleração com Tab
 - [x] Save states (4 slots), com verificação de jogo e de versão (estados antigos continuam carregando)
 - [x] Interface com Dear ImGui: menus, abrir ROM (diálogo, arrastar e soltar, recentes), pausar, reiniciar, escala, tela cheia, volume, tema pastel

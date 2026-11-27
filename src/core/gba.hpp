@@ -20,7 +20,9 @@ class Gba {
 public:
     Gba();
 
+    // Também aplica o ajuste do jogo (game_db): tipo de save e hardware extra do cartucho.
     void loadRom(std::vector<uint8_t> rom);
+    uint8_t cartHardware() const { return cartHardware_; } // bits de gba::hw
     void loadBios(std::vector<uint8_t> bios) { bus_.loadBios(std::move(bios)); hasBios_ = true; }
     void reset();
 
@@ -66,6 +68,7 @@ private:
     uint64_t instructions_ = 0;
     uint64_t frames_ = 0;
     uint64_t romHash_ = 0;
+    uint8_t cartHardware_ = 0;
     void serialize(StateArchive& ar);
     std::vector<ProbeHit> probeLog_;
     std::set<std::tuple<uint32_t, int, uint32_t>> probeSeen_;

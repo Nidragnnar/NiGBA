@@ -8,6 +8,11 @@ constexpr int kReset = 0, kDateTime = 2, kControl = 4, kTime = 6;
 constexpr int kCommandBytes[8] = {0, 0, 7, 0, 1, 0, 3, 0};
 
 constexpr uint8_t kSck = 1, kSio = 2, kCs = 4;
+constexpr uint8_t kSolarClock = 1, kSolarReset = 2, kSolarOut = 8;
+
+// Luz em cada nível (1 a 10), na escala do sensor; os mesmos valores do mGBA (GBA_LUX_LEVELS).
+// Nível 0 = escuro: a saída só sobe depois de 255 pulsos.
+constexpr int kLux[Rtc::kMaxSunLevel + 1] = {0, 5, 11, 18, 27, 42, 62, 84, 109, 139, 183};
 
 uint8_t toBcd(int v) { return static_cast<uint8_t>(((v / 10) << 4) | (v % 10)); }
 bool isRead(uint8_t command) { return command & 0x80; }
@@ -22,6 +27,7 @@ void Rtc::write(uint32_t offset, uint16_t value) {
         // Só os pinos configurados como saída do GBA mudam com a escrita.
         pins_ = static_cast<uint8_t>((pins_ & ~direction_) | (value & direction_ & 0xF));
         updatePins();
+        if (solar_) updateSolar();
         break;
     case 0xC6: direction_ = static_cast<uint8_t>(value & 0xF); break;
     case 0xC8: readable_ = value & 1; break;
@@ -81,6 +87,20 @@ void Rtc::updatePins() {
         transferStep_ = 0;
         break;
     }
+}
+
+void Rtc::updateSolar() {
+    if (pins_ & kCs) return; // o relógio está selecionado: o sensor não responde
+    if (pins_ & kSolarReset) {
+        lightCounter_ = 0;
+        lightEdge_ = true;
+        lightSample_ = 0xFF - kLux[sunLevel_];
+    }
+    if ((pins_ & kSolarClock) && lightEdge_) ++lightCounter_;
+    lightEdge_ = !(pins_ & kSolarClock);
+    // A saída só aparece se o pino 3 for entrada para o GBA.
+    const uint8_t out = lightCounter_ >= lightSample_ ? kSolarOut : 0;
+    pins_ = static_cast<uint8_t>((pins_ & (direction_ | 0x7)) | (out & ~direction_));
 }
 
 void Rtc::processByte() {
@@ -151,6 +171,12 @@ void Rtc::serialize(StateArchive& ar) {
     ar.value(commandActive_);
     ar.value(control_);
     ar.value(time_);
+}
+
+void Rtc::serializeSolar(StateArchive& ar) {
+    ar.value(lightCounter_);
+    ar.value(lightEdge_);
+    ar.value(lightSample_);
 }
 
 } // namespace gba

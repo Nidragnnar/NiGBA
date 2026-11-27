@@ -53,6 +53,8 @@ void Apu::reset() {
     sampleTimer_ = kCyclesPerSample;
     pendingCycles_ = 0;
     highPassL_ = highPassR_ = lastInL_ = lastInR_ = 0;
+    psgSum_ = {};
+    psgCycles_ = 0;
     samples_.clear();
 }
 
@@ -185,33 +187,46 @@ void Apu::frameSequencerStep() {
     frameSequencerStep_ = (frameSequencerStep_ + 1) & 7;
 }
 
-void Apu::stepChannels(int cycles) {
-    for (int i = 0; i < 2; ++i) {
-        Square& sq = square_[static_cast<size_t>(i)];
-        sq.timer -= cycles;
-        while (sq.timer <= 0) {
-            sq.timer += squarePeriod(reg(i == 0 ? kSound1X : kSound2H));
-            sq.dutyStep = (sq.dutyStep + 1) & 7;
-        }
-    }
-    wave_.timer -= cycles;
-    while (wave_.timer <= 0) {
-        wave_.timer += wavePeriod(reg(kSound3X));
-        const int samples = (reg(kSound3L) & 0x20) ? 64 : 32; // 1 banco ou os 2 seguidos
-        wave_.position = (wave_.position + 1) % samples;
-    }
-    noise_.timer -= cycles;
-    while (noise_.timer <= 0) {
-        noise_.timer += noisePeriod(reg(kSound4H));
-        const bool carry = noise_.lfsr & 1;
-        noise_.lfsr >>= 1;
-        noise_.output = carry;
-        if (carry) noise_.lfsr ^= (reg(kSound4H) & 0x08) ? 0x60 : 0x6000;
+namespace {
+// Avança o timer de um canal por `cycles`. Entre duas mudanças da saída o nível é constante: soma
+// nível × duração de cada trecho (para a média da amostra). `edge` muda a saída quando o timer zera.
+template <typename Level, typename Period, typename Edge>
+void runChannel(int& timer, int cycles, int64_t& sum, Level level, Period period, Edge edge) {
+    while (timer <= 0) { timer += period(); edge(); } // timer zerado (depois do reset)
+    while (cycles > 0) {
+        const int run = std::min(cycles, timer);
+        sum += static_cast<int64_t>(level()) * run;
+        timer -= run;
+        cycles -= run;
+        if (timer == 0) { timer = period(); edge(); }
     }
 }
+} // namespace
 
-// Os canais avançam de uma vez quando chega a hora de uma amostra (a cada 512 ciclos), porque o
-// estado entre duas amostras não chega a ser ouvido.
+void Apu::stepChannels(int cycles) {
+    psgCycles_ += cycles;
+    for (int i = 0; i < 2; ++i) {
+        Square& sq = square_[static_cast<size_t>(i)];
+        const uint32_t freqReg = i == 0 ? kSound1X : kSound2H;
+        runChannel(sq.timer, cycles, psgSum_[static_cast<size_t>(i)], [&] { return squareLevel(i); },
+                   [&] { return squarePeriod(reg(freqReg)); }, [&] { sq.dutyStep = (sq.dutyStep + 1) & 7; });
+    }
+    runChannel(wave_.timer, cycles, psgSum_[2], [&] { return waveLevel(); }, [&] { return wavePeriod(reg(kSound3X)); },
+               [&] {
+                   const int samples = (reg(kSound3L) & 0x20) ? 64 : 32; // 1 banco ou os 2 seguidos
+                   wave_.position = (wave_.position + 1) % samples;
+               });
+    runChannel(noise_.timer, cycles, psgSum_[3], [&] { return noiseLevel(); }, [&] { return noisePeriod(reg(kSound4H)); },
+               [&] {
+                   const bool carry = noise_.lfsr & 1;
+                   noise_.lfsr >>= 1;
+                   noise_.output = carry;
+                   if (carry) noise_.lfsr ^= (reg(kSound4H) & 0x08) ? 0x60 : 0x6000;
+               });
+}
+
+// Os canais avançam de uma vez quando chega a hora de uma amostra (a cada 512 ciclos); o que
+// aconteceu no meio entra na média dos canais 1-4 (ver runChannel).
 void Apu::produceSamples() {
     while (sampleTimer_ <= 0) {
         // Leva os canais até o instante exato desta amostra.
@@ -257,35 +272,43 @@ void Apu::updateStatus() {
     if ((x & 0x0F) != status) bus_.ioWrite16Raw(kSoundCntX, static_cast<uint16_t>((x & ~0x0F) | status));
 }
 
+int Apu::squareLevel(int index) const {
+    const Square& sq = square_[static_cast<size_t>(index)];
+    const int duty = (reg(index == 0 ? kSound1H : kSound2L) >> 6) & 3;
+    return sq.enabled && kDuty[duty][sq.dutyStep] ? sq.envelope.volume : 0;
+}
+
+int Apu::waveLevel() const {
+    if (!wave_.enabled) return 0;
+    const uint16_t l = reg(kSound3L), h = reg(kSound3H);
+    const int bank = (l & 0x40) ? 1 : 0;
+    const size_t byte = (static_cast<size_t>(bank * 16) + static_cast<size_t>(wave_.position / 2)) % 32;
+    const int sample = (wave_.position & 1) ? (wave_.ram[byte] & 0xF) : (wave_.ram[byte] >> 4);
+    if (h & 0x8000) return sample * 3 / 4;                            // 75%
+    switch ((h >> 13) & 3) {
+    case 0: return 0;                                                 // mudo
+    case 2: return sample >> 1;                                       // 50%
+    case 3: return sample >> 2;                                       // 25%
+    default: return sample;                                           // 100%
+    }
+}
+
+int Apu::noiseLevel() const { return noise_.enabled && noise_.output ? noise_.envelope.volume : 0; }
+
 void Apu::outputSample() {
     updateStatus();
     double left = 0, right = 0;
     if (reg(kSoundCntX) & 0x80) {
-        // Canais 1-4: amplitude de 0 a 15.
-        int amp[4] = {0, 0, 0, 0};
-        for (int i = 0; i < 2; ++i) {
-            const Square& sq = square_[static_cast<size_t>(i)];
-            const int duty = (reg(i == 0 ? kSound1H : kSound2L) >> 6) & 3;
-            if (sq.enabled && kDuty[duty][sq.dutyStep]) amp[i] = sq.envelope.volume;
+        // Canais 1-4: amplitude de 0 a 15 (média do intervalo ou valor no instante).
+        const bool average = smoothPsg_ && psgCycles_ > 0;
+        const int now[4] = {squareLevel(0), squareLevel(1), waveLevel(), noiseLevel()};
+        double amp[4];
+        for (size_t i = 0; i < 4; ++i) {
+            amp[i] = average ? static_cast<double>(psgSum_[i]) / psgCycles_ : now[i];
         }
-        if (wave_.enabled) {
-            const uint16_t l = reg(kSound3L), h = reg(kSound3H);
-            const int bank = (l & 0x40) ? 1 : 0;
-            const size_t byte = (static_cast<size_t>(bank * 16) + static_cast<size_t>(wave_.position / 2)) % 32;
-            int sample = (wave_.position & 1) ? (wave_.ram[byte] & 0xF) : (wave_.ram[byte] >> 4);
-            if (h & 0x8000) sample = sample * 3 / 4;                  // 75%
-            else switch ((h >> 13) & 3) {
-                case 0: sample = 0; break;                            // mudo
-                case 2: sample >>= 1; break;                          // 50%
-                case 3: sample >>= 2; break;                          // 25%
-                default: break;                                       // 100%
-            }
-            amp[2] = sample;
-        }
-        if (noise_.enabled && noise_.output) amp[3] = noise_.envelope.volume;
 
         const uint16_t cntL = reg(kSoundCntL), cntH = reg(kSoundCntH);
-        int psgL = 0, psgR = 0;
+        double psgL = 0, psgR = 0;
         for (int i = 0; i < 4; ++i) {
             if (cntL & (0x1000 << i)) psgL += amp[i];
             if (cntL & (0x0100 << i)) psgR += amp[i];
@@ -302,6 +325,9 @@ void Apu::outputSample() {
             if (cntH & (f == 0 ? 0x0100 : 0x1000)) right += v;
         }
     }
+
+    psgSum_ = {};
+    psgCycles_ = 0;
 
     // Filtro passa-alta (como o capacitor na saída do console): tira o nível contínuo e evita estalos.
     constexpr double kAlpha = 0.998;
@@ -333,7 +359,11 @@ void Apu::serialize(StateArchive& ar) {
     ar.value(highPassR_);
     ar.value(lastInL_);
     ar.value(lastInR_);
-    if (ar.loading()) samples_.clear();
+    if (ar.loading()) {
+        samples_.clear();
+        psgSum_ = {}; // a média da amostra em andamento recomeça (diferença inaudível)
+        psgCycles_ = 0;
+    }
 }
 
 } // namespace gba

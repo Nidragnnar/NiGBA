@@ -1,5 +1,7 @@
 #include "gba.hpp"
 
+#include "game_db.hpp"
+
 #include <algorithm>
 
 #include <cstring>
@@ -26,7 +28,11 @@ void Gba::loadRom(std::vector<uint8_t> rom) {
     uint64_t hash = 0xCBF29CE484222325ull;
     for (const uint8_t b : rom) hash = (hash ^ b) * 0x100000001B3ull;
     romHash_ = hash;
-    bus_.loadRom(std::move(rom));
+    const GameOverride* fix = findGameOverride(romGameCode(rom));
+    bus_.loadRom(std::move(rom)); // detecta o save pela assinatura
+    cartHardware_ = fix ? fix->hardware : 0;
+    if (fix && fix->save) bus_.backup().setType(*fix->save);
+    bus_.rtc().setSolarSensor(cartHardware_ & hw::Solar);
 }
 
 void Gba::reset() {
@@ -96,8 +102,8 @@ namespace gba {
 
 namespace {
 constexpr char kStateMagic[8] = {'G', 'B', 'A', 'E', 'M', 'U', 'S', 'T'};
-constexpr uint32_t kStateVersion = 6; // 2: relógio; 3: registrador do DMA; 4: tempo do barramento; 5: atraso dos timers;
-                                      // 6: DMA imediato esperando para começar
+constexpr uint32_t kStateVersion = 7; // 2: relógio; 3: registrador do DMA; 4: tempo do barramento; 5: atraso dos timers;
+                                      // 6: DMA imediato esperando para começar; 7: sensor solar
 } // namespace
 
 void Gba::serialize(StateArchive& ar) {
@@ -135,6 +141,7 @@ void Gba::serialize(StateArchive& ar) {
         bus_.serializeDmaSchedule(ar);
         dma_.serializePending(ar);
     }
+    if (version >= 7) bus_.rtc().serializeSolar(ar);
     if (ar.loading() && !ar.atEnd()) throw std::runtime_error("save state com dados sobrando (corrompido?)");
 }
 

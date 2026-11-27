@@ -138,8 +138,36 @@ static void testFifoWithDmaAndTimer() {
     CHECK(zeroCrossings(l) > 50);                          // a onda mudou de sinal várias vezes: a fila foi reabastecida
 }
 
+// Onda quadrada de ~43,7 kHz, acima do que 32.768 amostras/s representam: amostrada no instante, vira um
+// tom falso de ~11 kHz (o chiado); pela média do intervalo, sobra só uma ondulação pequena.
+static int peakToPeak(bool smooth) {
+    Console c;
+    c.g.apu().setSmoothPsg(smooth);
+    c.soundOn();
+    c.bus().write16(0x04000068, 0xF080);                   // canal 2: volume 15, ciclo 50%
+    c.bus().write16(0x0400006C, 0x8000 | 2045);            // 131072 / 3 = 43.690 Hz
+    const auto l = left(c.run(30));
+    const auto tail = std::vector<int16_t>(l.end() - 2000, l.end()); // depois de o filtro passa-alta assentar
+    const auto [lo, hi] = std::minmax_element(tail.begin(), tail.end());
+    return *hi - *lo;
+}
+
+static void testPsgSmoothing() {
+    const int raw = peakToPeak(false), smooth = peakToPeak(true);
+    CHECK(raw > 1500);                                     // o tom falso tem quase a amplitude toda
+    CHECK(smooth < raw * 4 / 10);                          // média: ~1/4 da amplitude
+    Console c;                                             // ligado por padrão
+    c.soundOn();
+    c.bus().write16(0x04000068, 0xF080);
+    c.bus().write16(0x0400006C, 0x8000 | 2045);
+    const auto l = left(c.run(30));
+    const auto [lo, hi] = std::minmax_element(l.end() - 2000, l.end());
+    CHECK(*hi - *lo == smooth);
+}
+
 int main() {
     testSquareFrequency();
+    testPsgSmoothing();
     testLengthAndStatus();
     testSweep();
     testNoise();

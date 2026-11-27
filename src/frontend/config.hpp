@@ -14,6 +14,8 @@ struct Config {
     bool gbaColors = false;              // cores da tela do GBA original
     bool smoothing = false;              // suavização bilinear
     bool lcdGrid = false;                // grade fina entre os pixels
+    bool smoothPsg = true;               // canais do Game Boy sem o chiado da amostragem
+    int sunLevel = 6;                    // luz do sol no sensor do Boktai (0-10)
     // Teclas (scancodes do SDL) na ordem dos bits do KEYINPUT: A B SELECT START → ← ↑ ↓ R L.
     std::array<int, 10> keys{};
     // Botões do controle (SDL_GameControllerButton), mesma ordem; -1 = nenhum.

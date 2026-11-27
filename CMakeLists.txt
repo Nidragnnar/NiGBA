@@ -33,6 +33,7 @@ add_library(gba_core
   src/core/rewind.cpp
   src/core/color.cpp
   src/core/cheats.cpp
+  src/core/game_db.cpp
   src/core/ppu.cpp)
 target_include_directories(gba_core PUBLIC src)
 if(MSVC)

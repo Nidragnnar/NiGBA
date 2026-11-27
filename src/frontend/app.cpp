@@ -13,6 +13,7 @@
 #include "core/cartridge.hpp"
 #include "core/cheats.hpp"
 #include "core/color.hpp"
+#include "core/game_db.hpp"
 #include "core/patch.hpp"
 #include "core/png.hpp"
 #include "frontend/diagnostics.hpp"
@@ -462,6 +463,8 @@ void App::openRom(const std::string& path, std::string patchPath, bool usePatch)
     }
     console->reset();
     console->setProbing(options_.probing);
+    console->bus().rtc().setSunLevel(config_.sunLevel);
+    console->apu().setSmoothPsg(config_.smoothPsg);
 
     // Save ao lado da ROM, com o mesmo nome e extensão .sav. Um .sav de tamanho inesperado é preservado.
     savePath_ = gba::pathToUtf8(gba::utf8Path(path).replace_extension(".sav"));
@@ -487,6 +490,13 @@ void App::openRom(const std::string& path, std::string patchPath, bool usePatch)
     rewind_.clear();
     romPath_ = path;
     loadCheats();
+    // Hardware extra do cartucho: o sensor solar tem controle no menu; o resto ainda não é emulado.
+    std::string note;
+    if (console_->bus().rtc().hasSolarSensor()) note = "Sensor solar: ajuste a luz em Emulação → Luz do sol";
+    if (const std::string missing = gba::unsupportedHardware(console_->cartHardware()); !missing.empty()) {
+        note = "Este jogo usa " + missing + ", que o NiGBA ainda não emula";
+    }
+    if (!note.empty()) toast(ImGui::GetTime() < toastUntil_ ? toast_ + "\n" + note : note);
     gameTitle_ = header.title.empty() ? gba::pathToUtf8(gba::utf8Path(path).stem()) : header.title;
     paused_ = options_.testPattern; // com o padrão de teste, a CPU não roda
     stopped_ = false;

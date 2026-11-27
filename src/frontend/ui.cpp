@@ -234,6 +234,14 @@ void App::drawMenuBar() {
         const auto active = std::count_if(cheats_.begin(), cheats_.end(), [](const gba::Cheat& c) { return c.enabled; });
         const std::string cheatsLabel = active ? "Cheats... (" + std::to_string(active) + " ligado" + (active > 1 ? "s)" : ")") : std::string("Cheats...");
         if (ImGui::MenuItem(cheatsLabel.c_str())) showCheats_ = true;
+        if (console_->bus().rtc().hasSolarSensor()) { // Boktai: o jogo mede a luz pelo sensor do cartucho
+            ImGui::SetNextItemWidth(160);
+            if (ImGui::SliderInt("Luz do sol", &config_.sunLevel, 0, gba::Rtc::kMaxSunLevel)) {
+                console_->bus().rtc().setSunLevel(config_.sunLevel);
+                config_.save(configPath_);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sensor solar do cartucho: 0 = escuro, 10 = sol forte.");
+        }
         ImGui::MenuItem("Voltar no tempo", "segure R", false, false); // só informa o atalho
         ImGui::TextDisabled("  Histórico: %.0f s, %.1f MB", static_cast<double>(rewind_.size() * kRewindInterval) / 60.0,
                             static_cast<double>(rewind_.memoryUsed()) / (1024.0 * 1024.0));
@@ -279,6 +287,14 @@ void App::drawMenuBar() {
 
     if (ImGui::BeginMenu("Áudio")) {
         ImGui::MenuItem("Mudo", nullptr, &config_.mute);
+        if (ImGui::MenuItem("Suavizar canais do Game Boy", nullptr, &config_.smoothPsg)) {
+            if (console_) console_->apu().setSmoothPsg(config_.smoothPsg);
+            config_.save(configPath_);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Tira o chiado agudo das ondas quadradas, da onda e do ruído.\n"
+                              "Desligado: igual ao aparelho, que também amostra esses canais a 32 kHz.");
+        }
         ImGui::SetNextItemWidth(160);
         ImGui::SliderInt("Volume", &config_.volume, 0, 100, "%d%%");
         ImGui::EndMenu();

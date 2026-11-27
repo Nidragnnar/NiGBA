@@ -1,10 +1,12 @@
 // Testes do sistema: interrupções, tratador de IRQ da BIOS (HLE) e temporização do vídeo.
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <initializer_list>
 #include <iterator>
 #include <vector>
 
+#include "core/game_db.hpp"
 #include "core/gba.hpp"
 
 static int failures = 0;
@@ -676,6 +678,105 @@ static void testRtc() {
     CHECK(bus.read8(0x080000C4) == 0xAB);
 }
 
+static std::vector<uint8_t> romWithCode(const char* code) {
+    auto rom = loopRom();
+    for (int i = 0; i < 4; ++i) rom[0xAC + static_cast<size_t>(i)] = static_cast<uint8_t>(code[i]);
+    return rom;
+}
+
+// Leitura do sensor solar como o Boktai faz: reinício, depois pulsos até o pino 3 subir.
+static int solarPulses(gba::Bus& bus) {
+    bus.write16(0x080000C8, 1);   // porta legível
+    bus.write16(0x080000C6, 7);   // pinos 0-2 saindo do GBA, pino 3 entrando
+    bus.write16(0x080000C4, 2);   // reinício
+    bus.write16(0x080000C4, 0);
+    for (int pulses = 1; pulses <= 300; ++pulses) {
+        bus.write16(0x080000C4, 1);
+        bus.write16(0x080000C4, 0);
+        if (bus.read16(0x080000C4) & 8) return pulses;
+    }
+    return -1;                    // a saída nunca subiu
+}
+
+static void testSolarSensor() {
+    gba::Gba g;
+    g.loadRom(romWithCode("U3IE"));                         // Boktai (EUA)
+    g.reset();
+    auto& bus = g.bus();
+    CHECK(bus.rtc().hasSolarSensor());
+    CHECK(bus.backup().type() == gba::Backup::Type::Eeprom); // sem assinatura na ROM: veio da tabela
+
+    bus.rtc().setSunLevel(10);
+    const int bright = solarPulses(bus);
+    bus.rtc().setSunLevel(5);
+    const int medium = solarPulses(bus);
+    bus.rtc().setSunLevel(0);
+    const int dark = solarPulses(bus);
+    CHECK(bright == 0xFF - 183);                            // valores da tabela de luz (mGBA)
+    CHECK(medium == 0xFF - 42);
+    CHECK(dark == 0xFF);
+    CHECK(bright < medium && medium < dark);                // mais luz, menos pulsos
+
+    bus.rtc().setSunLevel(99);                              // fora da faixa: fica no máximo
+    CHECK(bus.rtc().sunLevel() == gba::Rtc::kMaxSunLevel);
+
+    // Com o relógio selecionado (CS alto), o sensor não responde.
+    bus.rtc().setSunLevel(10);
+    bus.write16(0x080000C4, 2);
+    bus.write16(0x080000C4, 0);
+    for (int i = 0; i < 100; ++i) { bus.write16(0x080000C4, 5); bus.write16(0x080000C4, 4); }
+    CHECK(!(bus.read16(0x080000C4) & 8));
+
+    // O contador vai junto no save state.
+    bus.write16(0x080000C4, 2);
+    bus.write16(0x080000C4, 0);
+    for (int i = 0; i < 71; ++i) { bus.write16(0x080000C4, 1); bus.write16(0x080000C4, 0); }
+    const auto state = g.saveState();
+    for (int i = 0; i < 10; ++i) { bus.write16(0x080000C4, 1); bus.write16(0x080000C4, 0); }
+    CHECK(bus.read16(0x080000C4) & 8);
+    g.loadState(state);
+    bus.write16(0x080000C4, 0);
+    CHECK(!(bus.read16(0x080000C4) & 8));                   // 71 pulsos: ainda falta 1
+    bus.write16(0x080000C4, 1);
+    bus.write16(0x080000C4, 0);
+    CHECK(bus.read16(0x080000C4) & 8);
+
+    // Jogo comum: sem sensor, o pino 3 fica em 0.
+    gba::Gba other;
+    other.loadRom(loopRom());
+    other.reset();
+    CHECK(!other.bus().rtc().hasSolarSensor());
+    CHECK(solarPulses(other.bus()) == -1);
+}
+
+static void testGameOverrides() {
+    const auto saveOf = [](const char* code) {
+        gba::Gba g;
+        g.loadRom(romWithCode(code));
+        return g.bus().backup().type();
+    };
+    using T = gba::Backup::Type;
+    CHECK(saveOf("BPEE") == T::Flash128K);                  // Pokémon Emerald
+    CHECK(saveOf("AI2E") == T::None);                       // Iridion II: sem save
+    CHECK(saveOf("FSME") == T::Eeprom);                     // série Classic NES (começa com F)
+    CHECK(saveOf("ZZZZ") == T::Sram);                       // desconhecido: palpite de sempre
+
+    auto signed_ = romWithCode("ZZZZ");                     // sem ajuste, a assinatura continua valendo
+    const char sig[] = "EEPROM_V124";
+    std::copy(sig, sig + 11, signed_.begin() + 0x100);
+    gba::Gba g;
+    g.loadRom(signed_);
+    CHECK(g.bus().backup().type() == T::Eeprom);
+
+    gba::Gba twisted;
+    twisted.loadRom(romWithCode("RZWE"));                   // WarioWare: Twisted!
+    CHECK(twisted.cartHardware() & gba::hw::Gyro);
+    CHECK(gba::unsupportedHardware(twisted.cartHardware()) == "giroscópio, vibração");
+    CHECK(gba::unsupportedHardware(gba::hw::Rtc | gba::hw::Solar).empty()); // esses o NiGBA emula
+    CHECK(gba::findGameOverride("") == nullptr);
+    CHECK(gba::findGameOverride("ABC") == nullptr);
+}
+
 // Save states da versão 1 (antes do RTC) continuam carregando.
 static void testStateVersion1StillLoads() {
     gba::Gba g;
@@ -687,11 +788,13 @@ static void testStateVersion1StillLoads() {
     g.bus().rtc().serialize(rtcOnly);
     auto timingOnly = gba::StateArchive::writer();
     g.bus().serializeTiming(timingOnly);
+    auto solarOnly = gba::StateArchive::writer();
+    g.bus().rtc().serializeSolar(solarOnly);
     // Campos das versões 2 (relógio), 3 (registrador do DMA, 4 bytes) e 4 (tempo do barramento) ficam no
     // fim: tirá-los dá a versão 1.
-    // ...5 (atraso de partida dos timers: 4 ints) e 6 (espera do DMA imediato: um int e um byte).
+    // ...5 (atraso de partida dos timers: 4 ints), 6 (espera do DMA imediato: um int e um byte) e 7 (sensor solar).
     state.resize(state.size() - rtcOnly.data().size() - 4 - timingOnly.data().size() - 4 * sizeof(int) -
-                 sizeof(int) - 1);
+                 sizeof(int) - 1 - solarOnly.data().size());
     state[8] = 1; state[9] = state[10] = state[11] = 0;    // ...e marca como versão 1
     bool ok = true;
     try { g.loadState(state); } catch (const std::exception&) { ok = false; }
@@ -721,6 +824,8 @@ int main() {
     testEeprom(14);
     testEeprom(6);
     testRtc();
+    testSolarSensor();
+    testGameOverrides();
     testStateVersion1StillLoads();
     if (failures == 0) std::printf("Sistema: todos os testes passaram.\n");
     return failures == 0 ? 0 : 1;

@@ -36,6 +36,10 @@ public:
     // Chamado quando a fila A (0) ou B (1) fica com 16 bytes ou menos: o DMA de som deve reabastecê-la.
     void setFifoRequest(std::function<void(int fifo)> request) { fifoRequest_ = std::move(request); }
 
+    // Canais 1-4 pela média de cada intervalo de amostra em vez do valor no instante dela: tira o chiado
+    // de ondas acima de 16 kHz. O aparelho amostra no instante (desligado = fiel ao hardware).
+    void setSmoothPsg(bool on) { smoothPsg_ = on; }
+
     // Amostras geradas desde a última chamada (esquerda, direita, esquerda, ...).
     std::vector<int16_t> takeSamples() { return std::exchange(samples_, {}); }
 
@@ -83,6 +87,10 @@ private:
     bool sweepStep(bool writeBack); // calcula a nova frequência; false se estourou (desliga o canal)
     void frameSequencerStep();
     void stepChannels(int cycles);
+    // Nível de saída (0-15) de cada canal agora.
+    int squareLevel(int index) const;
+    int waveLevel() const;
+    int noiseLevel() const;
     void catchUp(int cycles);
     void produceSamples();
     void outputSample();
@@ -96,6 +104,9 @@ private:
     std::array<Fifo, 2> fifo_{};
     int frameSequencerTimer_ = 0, frameSequencerStep_ = 0, sampleTimer_ = 0;
     int pendingCycles_ = 0; // ciclos ainda não aplicados aos canais
+    bool smoothPsg_ = true;
+    std::array<int64_t, 4> psgSum_{}; // nível × ciclos de cada canal desde a última amostra
+    int psgCycles_ = 0;               // ciclos somados em psgSum_
     double highPassL_ = 0, highPassR_ = 0, lastInL_ = 0, lastInR_ = 0; // remove o nível contínuo da saída
     std::vector<int16_t> samples_;
     std::function<void(int)> fifoRequest_;
