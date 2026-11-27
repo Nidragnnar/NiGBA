@@ -88,17 +88,4 @@ std::string romGameCode(const std::vector<uint8_t>& rom) {
     return std::string(reinterpret_cast<const char*>(&rom[0xAC]), 4);
 }
 
-std::string unsupportedHardware(uint8_t hardware) {
-    std::string names;
-    const auto add = [&](uint8_t bit, const char* name) {
-        if (!(hardware & bit)) return;
-        if (!names.empty()) names += ", ";
-        names += name;
-    };
-    add(hw::Tilt, "sensor de inclinação");
-    add(hw::Gyro, "giroscópio");
-    add(hw::Rumble, "vibração");
-    return names;
-}
-
 } // namespace gba

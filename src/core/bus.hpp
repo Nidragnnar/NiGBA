@@ -22,6 +22,7 @@
 #include "backup.hpp"
 #include "rtc.hpp"
 #include "state.hpp"
+#include "tilt.hpp"
 
 namespace gba {
 
@@ -58,6 +59,10 @@ public:
     void loadRom(std::vector<uint8_t> data); // também detecta o tipo de save
     Backup& backup() { return backup_; }
     Rtc& rtc() { return rtc_; }
+    // Sensor de inclinação (só nos cartuchos que têm, ver game_db): ocupa 0E008000-0E008500.
+    TiltSensor& tilt() { return tilt_; }
+    void setTiltSensor(bool present) { tiltPresent_ = present; }
+    bool hasTiltSensor() const { return tiltPresent_; }
     void serialize(StateArchive& ar);
 
     // Busca de instruções (não passa pela sonda).
@@ -182,6 +187,8 @@ private:
     std::vector<uint8_t>            rom_;
     mutable Backup                  backup_;
     Rtc                             rtc_;
+    TiltSensor                      tilt_;
+    bool                            tiltPresent_ = false;
     static bool isGpio(uint32_t addr) { return (addr >> 24) == 0x08 && (addr & 0xFFFFFF) >= 0xC4 && (addr & 0xFFFFFF) <= 0xC9; }
     bool isEepromAddress(uint32_t addr) const;
     const uint8_t* fastPointer(uint32_t addr, uint32_t size) const;

@@ -28,7 +28,9 @@ Emulador de Game Boy Advance em C++20, escrito do zero usando o GBATEK como espe
 - [x] Temporização realista: custo de cada acesso por região (WAITCNT, sequencial ou não), buffer de prefetch do cartucho, ciclos internos da CPU, DMA gastando tempo da CPU e timers precisos no meio das instruções e DMA com tempo próprio (sequência de origem e destino, 2 ciclos de partida) (suíte do mGBA: Timing 1784/2020)
 - [x] Relógio do cartucho (RTC Seiko S-3511, porta GPIO) com a hora do computador: Pokémon Ruby/Sapphire/Emerald e derivados, Boktai
 - [x] Sensor solar do Boktai 1/2/3 (mesma porta GPIO): a luz do sol é escolhida em **Emulação → Luz do sol** (0 a 10)
-- [x] Tabela de jogos especiais (pelo código do cartucho, dados do mGBA): tipo de save que a assinatura da ROM não revela e hardware extra; avisa quando o jogo usa inclinação, giroscópio ou vibração, que ainda não são emulados
+- [x] Tabela de jogos especiais (pelo código do cartucho, dados do mGBA): tipo de save que a assinatura da ROM não revela e hardware extra do cartucho
+- [x] Sensor de inclinação (Yoshi Topsy-Turvy, Koro Koro Puzzle) e giroscópio (WarioWare: Twisted!): analógico direito ou I J K L
+- [x] Vibração (Drill Dozer, WarioWare: Twisted!): o controle vibra junto com o motor do cartucho
 - [x] Save: detecção automática, SRAM, Flash 64/128 KB e EEPROM 512 bytes/8 KB, arquivo .sav com gravação segura e automática
 - [x] Sprites: normais e afins (rotação/zoom, tamanho duplo), 12 tamanhos, 16/256 cores, espelhamento, mapeamento 1D/2D, prioridade com backgrounds e entre sprites, limite de ciclos por linha
 - [x] Janelas (WIN0, WIN1, janela de sprites e "fora"), blending (mistura, clarear, escurecer, sprites semitransparentes) e mosaico (BG e sprites)

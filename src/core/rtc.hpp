@@ -13,6 +13,11 @@
 // Sensor solar do Boktai (GBATEK, "GBA Cart Solar Sensor"), na mesma porta, com CS baixo:
 //   bit 0 = relógio, bit 1 = reinício (zera o contador), bit 3 = saída do sensor.
 // Depois do reinício, o jogo dá pulsos até o bit 3 subir: quanto mais luz, menos pulsos.
+//
+// Giroscópio do WarioWare: Twisted! (GBATEK, "GBA Cart Rotation Sensor"; mesmo comportamento do mGBA):
+//   bit 0 = mede agora, bit 1 = relógio, bit 2 = dado (16 bits, o mais alto primeiro, um por queda do relógio).
+//   Parado, a leitura fica perto de 700h; girar muda para mais ou para menos.
+// Vibração (Drill Dozer, WarioWare: Twisted!): bit 3 ligado = motor vibrando.
 
 #include <array>
 #include <cstdint>
@@ -46,9 +51,29 @@ public:
     int sunLevel() const { return sunLevel_; }
     void serializeSolar(StateArchive& ar); // versão 7 do formato (no final)
 
+    // O relógio responde em qualquer jogo, menos nos cartuchos cuja porta é de outro aparelho (ver game_db).
+    void setClockPresent(bool present) { clockOn_ = present; }
+    bool clockPresent() const { return clockOn_; }
+
+    // Giroscópio: rotação pedida por quem joga, de -1 a 1 (0 = parado).
+    static constexpr int kGyroCenter = 0x700;
+    static constexpr int kGyroRange = 0x300; // quanto a rotação máxima afasta do centro (estimado)
+    void setGyroSensor(bool present) { gyro_ = present; }
+    bool hasGyroSensor() const { return gyro_; }
+    void setRotation(float rotation) { rotation_ = rotation; }
+    void serializeGyro(StateArchive& ar); // versão 8 do formato (no final)
+
+    // Vibração: o jogo liga o motor pelo pino 3.
+    void setRumbleMotor(bool present) { rumble_ = present; }
+    bool hasRumbleMotor() const { return rumble_; }
+    bool rumbling() const { return rumble_ && (pins_ & 8); }
+    // O motor ligou em algum momento desde a última chamada? (jogos ligam e desligam várias vezes por quadro)
+    bool takeRumble() { const bool on = rumbleSeen_ || rumbling(); rumbleSeen_ = false; return on; }
+
 private:
     void updatePins();     // o jogo mudou os pinos: avança o protocolo
     void updateSolar();    // idem, para o sensor solar
+    void updateGyro();     // idem, para o giroscópio
     void processByte();    // terminou de chegar um byte do jogo
     uint8_t outputBit() const;
     void latchTime();      // copia a hora atual para os 7 bytes de data/hora (BCD)
@@ -73,6 +98,14 @@ private:
     int lightCounter_ = 0;   // pulsos desde o último reinício
     bool lightEdge_ = false; // o relógio estava baixo: o próximo alto conta um pulso
     int lightSample_ = 0xFF; // pulsos necessários para a saída subir (medido no reinício)
+
+    bool clockOn_ = true;
+    bool gyro_ = false;
+    float rotation_ = 0;
+    uint16_t gyroSample_ = 0; // bits ainda não enviados (o mais alto sai primeiro)
+    bool gyroEdge_ = false;   // o relógio do giroscópio estava alto
+    bool rumble_ = false;
+    bool rumbleSeen_ = false; // o motor ligou desde o último takeRumble()
 };
 
 } // namespace gba

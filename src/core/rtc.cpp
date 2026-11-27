@@ -1,5 +1,8 @@
 #include "rtc.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace gba {
 
 namespace {
@@ -26,8 +29,10 @@ void Rtc::write(uint32_t offset, uint16_t value) {
     case 0xC4:
         // Só os pinos configurados como saída do GBA mudam com a escrita.
         pins_ = static_cast<uint8_t>((pins_ & ~direction_) | (value & direction_ & 0xF));
-        updatePins();
+        if (clockOn_) updatePins();
         if (solar_) updateSolar();
+        if (gyro_) updateGyro();
+        if (rumbling()) rumbleSeen_ = true;
         break;
     case 0xC6: direction_ = static_cast<uint8_t>(value & 0xF); break;
     case 0xC8: readable_ = value & 1; break;
@@ -101,6 +106,22 @@ void Rtc::updateSolar() {
     // A saída só aparece se o pino 3 for entrada para o GBA.
     const uint8_t out = lightCounter_ >= lightSample_ ? kSolarOut : 0;
     pins_ = static_cast<uint8_t>((pins_ & (direction_ | 0x7)) | (out & ~direction_));
+}
+
+void Rtc::updateGyro() {
+    bool output = gyroEdge_ && !(pins_ & 2); // queda do relógio: sai o próximo bit
+    if (pins_ & 1) {                         // mede: 12 bits em volta do centro, nos bits 0-11
+        const float r = std::clamp(rotation_, -1.0f, 1.0f);
+        gyroSample_ = static_cast<uint16_t>(kGyroCenter + static_cast<int>(std::lround(r * kGyroRange)));
+        output = true;
+    }
+    if (output) {
+        const uint8_t bit = static_cast<uint8_t>(gyroSample_ >> 15);
+        gyroSample_ = static_cast<uint16_t>(gyroSample_ << 1);
+        // O dado sai no pino 2, se ele for entrada para o GBA.
+        pins_ = static_cast<uint8_t>((pins_ & (direction_ | ~4u)) | ((bit << 2) & ~direction_));
+    }
+    gyroEdge_ = pins_ & 2;
 }
 
 void Rtc::processByte() {
@@ -177,6 +198,11 @@ void Rtc::serializeSolar(StateArchive& ar) {
     ar.value(lightCounter_);
     ar.value(lightEdge_);
     ar.value(lightSample_);
+}
+
+void Rtc::serializeGyro(StateArchive& ar) {
+    ar.value(gyroSample_);
+    ar.value(gyroEdge_);
 }
 
 } // namespace gba

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -243,12 +244,13 @@ bool App::runOneFrame(bool keepAudio) {
 // Assim a velocidade é a do GBA (59,73 quadros/s) em qualquer monitor.
 void App::runEmulation() {
     const uint64_t now = SDL_GetPerformanceCounter();
-    timeDebt_ = std::min(timeDebt_ + static_cast<double>(now - lastTick_) / static_cast<double>(SDL_GetPerformanceFrequency()),
-                         4 * kFrameSeconds);
+    const double elapsed = static_cast<double>(now - lastTick_) / static_cast<double>(SDL_GetPerformanceFrequency());
+    timeDebt_ = std::min(timeDebt_ + elapsed, 4 * kFrameSeconds);
     lastTick_ = now;
 
-    if (!console_ || paused_ || stopped_) { timeDebt_ = 0; SDL_Delay(1); return; }
+    if (!console_ || paused_ || stopped_) { timeDebt_ = 0; updateRumble(false); SDL_Delay(1); return; }
     console_->bus().setKeyInput(readKeys());
+    updateMotion(std::min(elapsed, 0.1));
 
     const bool wantAudio = audio_ && !config_.mute;
     int ran = 0;
@@ -273,6 +275,7 @@ void App::runEmulation() {
     } else {
         while (ran < 4 && !stopped_ && timeDebt_ >= kFrameSeconds) { runOneFrame(false); timeDebt_ -= kFrameSeconds; ++ran; }
     }
+    if (ran > 0) updateRumble(!rewinding_ && console_->bus().rtc().takeRumble());
     if (ran == 0) SDL_Delay(1);
 }
 
@@ -304,6 +307,58 @@ uint16_t App::readKeys() const {
         if (y > kDeadZone) press(7);
     }
     return keys;
+}
+
+void App::updateMotion(double seconds) {
+    auto& port = console_->bus().rtc();
+    const bool tilt = console_->bus().hasTiltSensor(), gyro = port.hasGyroSensor();
+    if (!tilt && !gyro) return;
+
+    // Teclado: I J K L (com um menu ou janela em foco, o teclado é da interface).
+    float keyX = 0, keyY = 0;
+    if (capture_ == Capture::None && !ImGui::GetIO().WantCaptureKeyboard) {
+        const Uint8* state = SDL_GetKeyboardState(nullptr);
+        keyX = static_cast<float>(state[SDL_SCANCODE_L]) - static_cast<float>(state[SDL_SCANCODE_J]);
+        keyY = static_cast<float>(state[SDL_SCANCODE_K]) - static_cast<float>(state[SDL_SCANCODE_I]);
+    }
+    // Analógico direito, com zona morta; o controle mais inclinado vence.
+    float padX = 0, padY = 0;
+    const auto axis = [](Sint16 v) {
+        constexpr float kDead = 4000.0f;
+        const float f = static_cast<float>(v);
+        return std::abs(f) < kDead ? 0.0f : std::clamp((f - std::copysign(kDead, f)) / (32767.0f - kDead), -1.0f, 1.0f);
+    };
+    for (SDL_GameController* pad : pads_) {
+        const float x = axis(SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_RIGHTX));
+        const float y = axis(SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_RIGHTY));
+        if (std::abs(x) > std::abs(padX)) padX = x;
+        if (std::abs(y) > std::abs(padY)) padY = y;
+    }
+    const bool usingPad = padX != 0 || padY != 0;
+
+    if (tilt) {
+        if (usingPad) {
+            tiltX_ = padX;
+            tiltY_ = padY;
+        } else {
+            // Pelo teclado, a inclinação vai e volta aos poucos (~0,3 s de reto até o máximo).
+            const float step = static_cast<float>(seconds) * 3.0f;
+            const auto approach = [step](float& v, float target) { v += std::clamp(target - v, -step, step); };
+            approach(tiltX_, keyX);
+            approach(tiltY_, keyY);
+        }
+        console_->bus().tilt().setTilt(tiltX_, tiltY_);
+    }
+    if (gyro) port.setRotation(usingPad ? padX : keyX); // girar: direto, sem rampa
+}
+
+void App::updateRumble(bool active) {
+    if (!active && !rumbleOn_) return;
+    for (SDL_GameController* pad : pads_) {
+        // Renovado a cada quadro; se a emulação parar de chamar, o controle para sozinho em 150 ms.
+        SDL_GameControllerRumble(pad, active ? 0xB000 : 0, active ? 0xB000 : 0, active ? 150 : 0);
+    }
+    rumbleOn_ = active;
 }
 
 // Gatilho direito (RT/R2) acelera, como o Tab.
@@ -495,12 +550,16 @@ void App::openRom(const std::string& path, std::string patchPath, bool usePatch)
     rewind_.clear();
     romPath_ = path;
     loadCheats();
-    // Hardware extra do cartucho: o sensor solar tem controle no menu; o resto ainda não é emulado.
+    // Hardware extra do cartucho: como controlar cada um.
     std::string note;
-    if (console_->bus().rtc().hasSolarSensor()) note = "Sensor solar: ajuste a luz em Emulação → Luz do sol";
-    if (const std::string missing = gba::unsupportedHardware(console_->cartHardware()); !missing.empty()) {
-        note = "Este jogo usa " + missing + ", que o NiGBA ainda não emula";
-    }
+    const auto addNote = [&note](const std::string& line) { note += (note.empty() ? "" : "\n") + line; };
+    const uint8_t extra = console_->cartHardware();
+    if (extra & gba::hw::Solar) addNote("Sensor solar: ajuste a luz em Emulação → Luz do sol");
+    if (extra & gba::hw::Tilt) addNote("Inclinação: analógico direito ou I J K L");
+    if (extra & gba::hw::Gyro) addNote("Giro: analógico direito ou J / L");
+    if (extra & gba::hw::Rumble) addNote(pads_.empty() ? "Vibração: conecte um controle para sentir" : "Vibração: ligada no controle");
+    tiltX_ = tiltY_ = 0;
+    updateRumble(false);
     if (!note.empty()) toast(ImGui::GetTime() < toastUntil_ ? toast_ + "\n" + note : note);
     gameTitle_ = header.title.empty() ? gba::pathToUtf8(gba::utf8Path(path).stem()) : header.title;
     paused_ = options_.testPattern; // com o padrão de teste, a CPU não roda

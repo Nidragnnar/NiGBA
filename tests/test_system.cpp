@@ -771,10 +771,126 @@ static void testGameOverrides() {
     gba::Gba twisted;
     twisted.loadRom(romWithCode("RZWE"));                   // WarioWare: Twisted!
     CHECK(twisted.cartHardware() & gba::hw::Gyro);
-    CHECK(gba::unsupportedHardware(twisted.cartHardware()) == "giroscópio, vibração");
-    CHECK(gba::unsupportedHardware(gba::hw::Rtc | gba::hw::Solar).empty()); // esses o NiGBA emula
+    CHECK(twisted.bus().rtc().hasGyroSensor() && twisted.bus().rtc().hasRumbleMotor());
     CHECK(gba::findGameOverride("") == nullptr);
     CHECK(gba::findGameOverride("ABC") == nullptr);
+
+    // O relógio só sai da porta nos cartuchos de giroscópio ou vibração sem relógio.
+    const auto clockOf = [](const char* code) {
+        gba::Gba g;
+        g.loadRom(romWithCode(code));
+        return g.bus().rtc().clockPresent();
+    };
+    CHECK(!clockOf("RZWE"));                                // WarioWare: giroscópio + vibração
+    CHECK(!clockOf("V49E"));                                // Drill Dozer: vibração
+    CHECK(clockOf("BPEE"));                                 // Emerald: relógio
+    CHECK(clockOf("U3IE"));                                 // Boktai: relógio + sensor solar
+    CHECK(clockOf("KYGE"));                                 // Yoshi: a inclinação não usa a porta
+    CHECK(clockOf("ZZZZ"));                                 // desconhecido: como sempre
+}
+
+// Giroscópio como o WarioWare lê: mede (pino 0) e recebe 16 bits no pino 2, um por queda do relógio (pino 1).
+static int gyroRead(gba::Bus& bus) {
+    bus.write16(0x080000C8, 1);
+    bus.write16(0x080000C6, 0xB);                           // pinos 0, 1 e 3 saindo do GBA; pino 2 entrando
+    bus.write16(0x080000C4, 1);                             // mede: o primeiro bit já sai
+    int value = (bus.read16(0x080000C4) >> 2) & 1;
+    bus.write16(0x080000C4, 0);
+    for (int i = 1; i < 16; ++i) {
+        bus.write16(0x080000C4, 2);
+        bus.write16(0x080000C4, 0);                         // queda do relógio: próximo bit
+        value = (value << 1) | ((bus.read16(0x080000C4) >> 2) & 1);
+    }
+    return value;
+}
+
+static void testGyroAndRumble() {
+    gba::Gba g;
+    g.loadRom(romWithCode("RZWE"));
+    g.reset();
+    auto& bus = g.bus();
+    bus.rtc().setRotation(0);
+    CHECK(gyroRead(bus) == gba::Rtc::kGyroCenter);          // parado: 700h
+    bus.rtc().setRotation(1);
+    CHECK(gyroRead(bus) == gba::Rtc::kGyroCenter + gba::Rtc::kGyroRange);
+    bus.rtc().setRotation(-1);
+    CHECK(gyroRead(bus) == gba::Rtc::kGyroCenter - gba::Rtc::kGyroRange);
+    bus.rtc().setRotation(5);                               // fora da faixa: fica no máximo
+    CHECK(gyroRead(bus) == gba::Rtc::kGyroCenter + gba::Rtc::kGyroRange);
+
+    // O meio da leitura vai junto no save state: 0,5 = 880h; depois dos 4 bits zerados vem o bit 11 = 1.
+    bus.rtc().setRotation(0.5f);
+    const auto fall = [&bus] {
+        bus.write16(0x080000C4, 2);
+        bus.write16(0x080000C4, 0);
+        return (bus.read16(0x080000C4) >> 2) & 1;
+    };
+    bus.write16(0x080000C4, 1);                             // mede (sai o bit 15)
+    bus.write16(0x080000C4, 0);
+    for (int i = 0; i < 3; ++i) fall();                     // bits 14, 13 e 12
+    const auto state = g.saveState();
+    CHECK(fall() == 1);                                     // bit 11
+    g.loadState(state);
+    CHECK(fall() == 1);                                     // de novo, depois de voltar o estado
+    CHECK(fall() == 0);                                     // bit 10
+
+    // Vibração: o pino 3 liga o motor; takeRumble lembra se ligou desde a última consulta.
+    bus.write16(0x080000C4, 8);
+    CHECK(bus.rtc().rumbling());
+    bus.write16(0x080000C4, 0);
+    CHECK(!bus.rtc().rumbling());
+    CHECK(bus.rtc().takeRumble());                          // ligou e desligou no meio: conta
+    CHECK(!bus.rtc().takeRumble());
+
+    gba::Gba plain;                                         // jogo sem motor: o pino 3 não vibra nada
+    plain.loadRom(loopRom());
+    plain.reset();
+    plain.bus().write16(0x080000C6, 8);
+    plain.bus().write16(0x080000C4, 8);
+    CHECK(!plain.bus().rtc().takeRumble());
+    CHECK(!plain.bus().rtc().hasGyroSensor());
+}
+
+static void testTiltSensor() {
+    gba::Gba g;
+    g.loadRom(romWithCode("KYGE"));                         // Yoshi Topsy-Turvy (EUA)
+    g.reset();
+    auto& bus = g.bus();
+    CHECK(bus.hasTiltSensor());
+    CHECK(bus.backup().type() == gba::Backup::Type::Eeprom); // o save continua no EEPROM
+    const auto read12 = [&bus](uint32_t low) {
+        return bus.read8(low) | ((bus.read8(low + 0x100) & 0xF) << 8);
+    };
+    CHECK(read12(0x0E008200) == 0xFFF);                     // antes da primeira medida
+    CHECK(bus.read8(0x0E008300) & 0x80);                    // bit "pronto"
+
+    bus.tilt().setTilt(0, 0);
+    bus.write8(0x0E008000, 0x55);
+    bus.write8(0x0E008100, 0xAA);
+    CHECK(read12(0x0E008200) == gba::TiltSensor::kCenter);
+    CHECK(read12(0x0E008400) == gba::TiltSensor::kCenter);
+
+    bus.tilt().setTilt(1, -1);
+    bus.write8(0x0E008100, 0xAA);                           // sem o 55h antes: não mede
+    CHECK(read12(0x0E008200) == gba::TiltSensor::kCenter);
+    bus.write8(0x0E008000, 0x55);
+    bus.write8(0x0E008100, 0xAA);
+    CHECK(read12(0x0E008200) == gba::TiltSensor::kCenter - gba::TiltSensor::kRange);
+    CHECK(read12(0x0E008400) == gba::TiltSensor::kCenter + gba::TiltSensor::kRange);
+
+    const auto state = g.saveState();                       // a medida vai junto no save state
+    bus.tilt().setTilt(0, 0);
+    bus.write8(0x0E008000, 0x55);
+    bus.write8(0x0E008100, 0xAA);
+    g.loadState(state);
+    CHECK(read12(0x0E008200) == gba::TiltSensor::kCenter - gba::TiltSensor::kRange);
+
+    gba::Gba other;                                         // sem sensor: 0E008200 é SRAM comum
+    other.loadRom(loopRom());
+    other.reset();
+    CHECK(!other.bus().hasTiltSensor());
+    other.bus().write8(0x0E008200, 0x12);
+    CHECK(other.bus().read8(0x0E008200) == 0x12);
 }
 
 // Save states da versão 1 (antes do RTC) continuam carregando.
@@ -790,11 +906,15 @@ static void testStateVersion1StillLoads() {
     g.bus().serializeTiming(timingOnly);
     auto solarOnly = gba::StateArchive::writer();
     g.bus().rtc().serializeSolar(solarOnly);
+    auto sensorsOnly = gba::StateArchive::writer();
+    g.bus().rtc().serializeGyro(sensorsOnly);
+    g.bus().tilt().serialize(sensorsOnly);
     // Campos das versões 2 (relógio), 3 (registrador do DMA, 4 bytes) e 4 (tempo do barramento) ficam no
     // fim: tirá-los dá a versão 1.
-    // ...5 (atraso de partida dos timers: 4 ints), 6 (espera do DMA imediato: um int e um byte) e 7 (sensor solar).
+    // ...5 (atraso de partida dos timers: 4 ints), 6 (espera do DMA imediato: um int e um byte), 7 (sensor solar)
+    // e 8 (giroscópio e inclinação).
     state.resize(state.size() - rtcOnly.data().size() - 4 - timingOnly.data().size() - 4 * sizeof(int) -
-                 sizeof(int) - 1 - solarOnly.data().size());
+                 sizeof(int) - 1 - solarOnly.data().size() - sensorsOnly.data().size());
     state[8] = 1; state[9] = state[10] = state[11] = 0;    // ...e marca como versão 1
     bool ok = true;
     try { g.loadState(state); } catch (const std::exception&) { ok = false; }
@@ -826,6 +946,8 @@ int main() {
     testRtc();
     testSolarSensor();
     testGameOverrides();
+    testGyroAndRumble();
+    testTiltSensor();
     testStateVersion1StillLoads();
     if (failures == 0) std::printf("Sistema: todos os testes passaram.\n");
     return failures == 0 ? 0 : 1;

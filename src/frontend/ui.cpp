@@ -536,6 +536,7 @@ void App::drawControlsWindow() {
                 ImGui::Spacing();
                 ImGui::TextDisabled("Analógico esquerdo: direcional  |  Gatilho direito: acelerar");
                 ImGui::TextDisabled("Gatilho esquerdo: voltar no tempo");
+                ImGui::TextDisabled("Analógico direito: inclinar / girar (Yoshi Topsy-Turvy, WarioWare Twisted)");
                 if (ImGui::Button("Restaurar o padrão##controle")) { config_.padButtons = Config::defaultPadButtons(); config_.save(configPath_); }
                 ImGui::EndTabItem();
             }
@@ -546,6 +547,7 @@ void App::drawControlsWindow() {
                 ImGui::BulletText("Ctrl+1..4       escolher o slot");
                 ImGui::BulletText("Ctrl+O / Ctrl+R abrir ROM / reiniciar");
                 ImGui::BulletText("F11             tela cheia");
+                ImGui::BulletText("I J K L         inclinar / girar (jogos com sensor)");
                 ImGui::BulletText("F10             avançar 1 quadro (pausa)");
                 ImGui::BulletText("F12             capturar a tela (PNG)");
                 ImGui::BulletText("R (segurar)     voltar no tempo (até ~20 s)");

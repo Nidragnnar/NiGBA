@@ -385,6 +385,7 @@ uint8_t Bus::readRaw8(uint32_t addr) const {
         if ((addr & 0xFFFFFF) >= io_.size()) return openBus(addr);
         return readIo(addr & 0x3FF);
     case 0x0E: case 0x0F:
+        if (tiltPresent_ && TiltSensor::isRegister(addr)) return tilt_.read(addr);
         return backup_.read(addr);
     case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0C: case 0x0D: {
         const uint32_t off = addr & 0x1FFFFFF;
@@ -510,7 +511,8 @@ void Bus::write8(uint32_t addr, uint8_t value) {
         return;
     }
     if (region == 0x0E || region == 0x0F) {
-        backup_.write(addr, value);
+        if (tiltPresent_ && TiltSensor::isRegister(addr)) tilt_.write(addr, value);
+        else backup_.write(addr, value);
         return;
     }
 

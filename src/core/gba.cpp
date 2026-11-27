@@ -32,7 +32,13 @@ void Gba::loadRom(std::vector<uint8_t> rom) {
     bus_.loadRom(std::move(rom)); // detecta o save pela assinatura
     cartHardware_ = fix ? fix->hardware : 0;
     if (fix && fix->save) bus_.backup().setType(*fix->save);
-    bus_.rtc().setSolarSensor(cartHardware_ & hw::Solar);
+    auto& port = bus_.rtc();
+    port.setSolarSensor(cartHardware_ & hw::Solar);
+    port.setGyroSensor(cartHardware_ & hw::Gyro);
+    port.setRumbleMotor(cartHardware_ & hw::Rumble);
+    // Cartucho com giroscópio ou vibração e sem relógio: a porta é só deles (o relógio confundiria os pinos).
+    port.setClockPresent((cartHardware_ & hw::Rtc) || !(cartHardware_ & (hw::Gyro | hw::Rumble)));
+    bus_.setTiltSensor(cartHardware_ & hw::Tilt);
 }
 
 void Gba::reset() {
@@ -102,8 +108,9 @@ namespace gba {
 
 namespace {
 constexpr char kStateMagic[8] = {'G', 'B', 'A', 'E', 'M', 'U', 'S', 'T'};
-constexpr uint32_t kStateVersion = 7; // 2: relógio; 3: registrador do DMA; 4: tempo do barramento; 5: atraso dos timers;
-                                      // 6: DMA imediato esperando para começar; 7: sensor solar
+constexpr uint32_t kStateVersion = 8; // 2: relógio; 3: registrador do DMA; 4: tempo do barramento; 5: atraso dos timers;
+                                      // 6: DMA imediato esperando para começar; 7: sensor solar;
+                                      // 8: giroscópio e sensor de inclinação
 } // namespace
 
 void Gba::serialize(StateArchive& ar) {
@@ -142,6 +149,10 @@ void Gba::serialize(StateArchive& ar) {
         dma_.serializePending(ar);
     }
     if (version >= 7) bus_.rtc().serializeSolar(ar);
+    if (version >= 8) {
+        bus_.rtc().serializeGyro(ar);
+        bus_.tilt().serialize(ar);
+    }
     if (ar.loading() && !ar.atEnd()) throw std::runtime_error("save state com dados sobrando (corrompido?)");
 }
 

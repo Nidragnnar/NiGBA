@@ -14,7 +14,7 @@ namespace gba {
 
 // Hardware extra do cartucho (bits combináveis).
 namespace hw {
-constexpr uint8_t Rtc = 1 << 0;    // relógio (sempre presente no NiGBA: a porta GPIO existe em qualquer jogo)
+constexpr uint8_t Rtc = 1 << 0;    // relógio (o NiGBA põe em qualquer jogo, menos nos de giroscópio ou vibração sem ele)
 constexpr uint8_t Solar = 1 << 1;  // sensor de luz (Boktai)
 constexpr uint8_t Tilt = 1 << 2;   // sensor de inclinação (Yoshi Topsy-Turvy, Koro Koro Puzzle)
 constexpr uint8_t Gyro = 1 << 3;   // giroscópio (WarioWare: Twisted!)
@@ -31,7 +31,5 @@ struct GameOverride {
 const GameOverride* findGameOverride(const std::string& gameCode);
 // Código do jogo direto da ROM (vazio se a ROM for menor que o cabeçalho).
 std::string romGameCode(const std::vector<uint8_t>& rom);
-// Nomes do hardware extra que o NiGBA ainda não emula (para avisar quem joga).
-std::string unsupportedHardware(uint8_t hardware);
 
 } // namespace gba

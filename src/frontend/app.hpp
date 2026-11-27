@@ -70,6 +70,9 @@ private:
     uint16_t readKeys() const;
     bool padFastForward() const;
     bool rewindHeld() const;
+    // Sensores do cartucho: inclinação e giro pelo analógico direito ou por I J K L; vibração no controle.
+    void updateMotion(double seconds);
+    void updateRumble(bool active);
     void drawLcdGrid(const SDL_FRect& dst);
     void openPad(int deviceIndex);
     void closePad(int32_t instanceId);
@@ -132,6 +135,8 @@ private:
 
     // Controles conectados e o remapeamento em andamento (clique num botão e aperte a tecla).
     std::vector<SDL_GameController*> pads_;
+    float tiltX_ = 0, tiltY_ = 0;        // inclinação atual (-1 a 1); pelo teclado ela muda aos poucos
+    bool rumbleOn_ = false;
     enum class Capture { None, Key, Pad } capture_ = Capture::None;
     int captureIndex_ = -1;
 
